@@ -30,6 +30,8 @@ The final host run made four Open-Meteo HTTP requests. Earlier bounded trials ex
 
 ## Limits
 
-This verifies plugin loading, dispatch, privacy gating, saved-settings reads, real networking, and unloading. It does **not** verify browser settings rendering/saving, an LLM choosing the tool, voice playback, a full Sapphire application startup, proxy-on live routing, image output, commercial provider access, or compatibility with older Sapphire releases. Settings were persisted in the disposable host's plugin settings JSON and read through its real loader; they were not saved through the browser UI.
+The initial run verified plugin loading, dispatch, privacy gating, saved-settings reads, real networking, and unloading. A subsequent browser installation test also verified the native settings renderer, authenticated save API, page-reload persistence, and live execution using browser-saved settings; see `validation/browser-installation.md`.
+
+An LLM choosing the tool, voice playback, a full Sapphire application startup, proxy-on live routing, image output, commercial provider access, and compatibility with older Sapphire releases remain unverified.
 
 The existing environments were not installed into or started. This is a text-only, unsigned community plugin. Open-Meteo's free service is limited to noncommercial use; provider terms and attribution requirements remain applicable.
