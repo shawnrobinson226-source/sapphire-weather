@@ -1,0 +1,36 @@
+[
+  {
+    "check": "host private-chat refusal before network",
+    "success": false,
+    "result": "Tool 'weather_get' requires network access and is blocked in this private chat. Inform the user."
+  },
+  {
+    "check": "live imperial using saved settings",
+    "success": true,
+    "result": "Weather — 34.0522, -118.2437\nCurrent modelled conditions: 2026-10-17T16:15 (America/Los_Angeles).\nOvercast; temperature 90.3°F; feels like 85.2°F; wind 5.4 mph; precipitation 0 in over the provider reporting interval.\nForecast (1 day(s), including today):\n2026-10-17: Overcast; high 91.1°F, low 68.6°F; rain/snow chance 3%.\nFetched 2026-10-17T23:15:59+00:00.\nWeather: Open-Meteo (https://open-meteo.com/), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Place names: GeoNames (https://www.geonames.org/)."
+  },
+  {
+    "check": "live metric argument override",
+    "success": true,
+    "result": "Weather — 34.0522, -118.2437\nCurrent modelled conditions: 2026-10-17T16:15 (America/Los_Angeles).\nOvercast; temperature 32.4°C; feels like 29.6°C; wind 8.8 km/h; precipitation 0 mm over the provider reporting interval.\nForecast (3 day(s), including today):\n2026-10-17: Overcast; high 32.8°C, low 20.4°C; rain/snow chance 3%.\n2026-10-18: Clear; high 31.7°C, low 18.1°C; rain/snow chance 1%.\n2026-10-19: Overcast; high 28.5°C, low 16.2°C; rain/snow chance 1%.\nFetched 2026-10-17T23:15:59+00:00.\nWeather: Open-Meteo (https://open-meteo.com/), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Place names: GeoNames (https://www.geonames.org/)."
+  },
+  {
+    "check": "warm-cache reuse",
+    "success": true,
+    "result": "Weather — 34.0522, -118.2437\nCurrent modelled conditions: 2026-10-17T16:15 (America/Los_Angeles).\nOvercast; temperature 90.3°F; feels like 85.2°F; wind 5.4 mph; precipitation 0 in over the provider reporting interval.\nForecast (1 day(s), including today):\n2026-10-17: Overcast; high 91.1°F, low 68.6°F; rain/snow chance 3%.\nCached; fetched 2026-10-17T23:15:59+00:00.\nWeather: Open-Meteo (https://open-meteo.com/), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Place names: GeoNames (https://www.geonames.org/)."
+  },
+  {
+    "check": "live city geocoding",
+    "success": true,
+    "result": "Weather — Los Angeles, California, United States\nCurrent modelled conditions: 2026-10-17T16:15 (America/Los_Angeles).\nOvercast; temperature 32.4°C; feels like 29.6°C; wind 8.8 km/h; precipitation 0 mm over the provider reporting interval.\nForecast (1 day(s), including today):\n2026-10-17: Overcast; high 32.8°C, low 20.4°C; rain/snow chance 3%.\nFetched 2026-10-17T23:16:00+00:00.\nWeather: Open-Meteo (https://open-meteo.com/), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Place names: GeoNames (https://www.geonames.org/)."
+  },
+  {
+    "check": "host private-chat refusal with warm cache",
+    "success": false,
+    "result": "Tool 'weather_get' requires network access and is blocked in this private chat. Inform the user."
+  },
+  {
+    "check": "unload removes tool",
+    "success": true
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "name": "sapphire-weather",
+  "short_display_name": "Weather",
+  "version": "0.1.0",
+  "description": "Current weather and up to seven forecast days using Open-Meteo.",
+  "author": "shawnrobinson226-source",
+  "icon": "🌤️",
+  "default_enabled": false,
+  "capabilities": {
+    "tools": ["tools/weather.py"],
+    "settings": [
+      {"key": "default_location", "type": "string", "label": "Default location", "default": "", "help": "City with region/country. Leave empty to ask each time. Ambiguous names require coordinates."},
+      {"key": "units", "type": "string", "label": "Units", "default": "metric", "options": [{"label": "Metric", "value": "metric"}, {"label": "Imperial", "value": "imperial"}]},
+      {"key": "forecast_days", "type": "number", "label": "Forecast days", "default": 3, "help": "Whole number from 1 to 7, including today."},
+      {"key": "timeout_seconds", "type": "number", "label": "Request timeout (seconds)", "default": 10, "help": "From 2 to 20 seconds per connection/read operation."},
+      {"key": "cache_minutes", "type": "number", "label": "Cache (minutes)", "default": 10, "help": "From 1 to 60 minutes. Cached responses show their fetch time."}
+    ]
+  }
+}
