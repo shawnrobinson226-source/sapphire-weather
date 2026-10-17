@@ -1,6 +1,14 @@
-# Sapphire Weather V1
+# Sapphire Weather
 
-Independent Sapphire plugin for current modelled conditions and one to seven forecast days, including today. No key or additional Python packages are required beyond Sapphire's existing runtime. Text output only in V1; no background tasks, automatic location lookup, images, or DES/AXIS/TRI connections.
+Independent Sapphire plugin for current modelled conditions and one to seven forecast days, including today. No key or additional Python packages are required beyond Sapphire's existing runtime. Version 0.2.0 adds a native visual Weather app alongside the conversational tool. No background tasks, device geolocation, or DES/AXIS/TRI connections.
+
+## Visual dashboard
+
+Open **Apps > Weather** after enabling the plugin. The dashboard presents one prominent current temperature, separate wind/feels-like/precipitation cards, and selectable daily forecast cards. The °F/°C control converts the loaded measurements immediately. The day slider reveals one to seven days without extra provider requests. Selecting a day updates its detail panel; ambiguous cities appear as selectable place buttons. Preferences > Save current view remembers the city, units, and visible forecast length through Sapphire's standard settings API.
+
+The app requests a seven-day snapshot, then filters locally; the conversational tool continues to request the chosen number of days. SVG weather illustrations represent provider condition codes. The dashboard adapts to narrow screens, supports keyboard focus, and honours reduced-motion preferences. It does not invent hourly data or comfort scores.
+
+The app's authenticated POST route checks the active chat's privacy setting server-side, separately from the tool manager's gate. Private or unverifiable chat state refuses before reading forecast caches or making provider calls. The app clears its displayed forecast after a failed request rather than presenting it as current.
 
 ## Install
 

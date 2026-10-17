@@ -237,6 +237,54 @@ class WeatherTests(unittest.TestCase):
                 w._json(w.FORECAST_URL, {}, 10)
         self.assertNotIn('secret', str(error.exception))
 
+    def test_structured_app_data_matches_chat_result(self):
+        with patch.object(w, '_json', return_value=forecast(7)):
+            snapshot = w.get_weather(dict(latitude=0, longitude=0, days=7))
+        self.assertEqual(snapshot['current']['temperature'], 21)
+        self.assertEqual(snapshot['forecast'][0]['high'], 24)
+        self.assertEqual(len(snapshot['forecast']), 7)
+        self.assertEqual(snapshot['units'], 'metric')
+        self.assertIn('21°C', snapshot['text'])
+
+    def test_app_route_private_gate_and_unknown_state(self):
+        spec = importlib.util.spec_from_file_location('forecast_route', ROOT / 'routes/forecast.py')
+        route = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(route)
+        def host(settings):
+            return types.SimpleNamespace(get_system=lambda: types.SimpleNamespace(llm_chat=types.SimpleNamespace(
+                session_manager=types.SimpleNamespace(get_chat_settings=lambda: settings))))
+        for state, expected in (({'private_chat': True}, 403), (None, 503), ({'private_chat':None}, 503)):
+            with self.subTest(state=state), patch.dict('sys.modules', {'core.api_fastapi': host(state)}), patch.object(route.importlib, 'import_module') as modules:
+                result, status = route.handle_forecast(body={'location': 'Paris'}, settings={})
+                self.assertEqual(status, expected)
+                self.assertIn('error', result)
+                modules.assert_not_called()
+
+    def test_app_route_public_uses_shared_data_path(self):
+        spec = importlib.util.spec_from_file_location('forecast_route', ROOT / 'routes/forecast.py')
+        route = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(route)
+        host = types.SimpleNamespace(get_system=lambda: types.SimpleNamespace(llm_chat=types.SimpleNamespace(
+            session_manager=types.SimpleNamespace(get_chat_settings=lambda: {'private_chat':False}))))
+        with patch.dict('sys.modules', {'core.api_fastapi':host}), patch.object(route.importlib, 'import_module', return_value=w), patch.object(w, '_json', return_value=forecast()):
+            result = route.handle_forecast(body=dict(latitude=0, longitude=0), settings={})
+        self.assertTrue(result['success'])
+        self.assertEqual(result['weather']['current']['condition'], 'Partly cloudy')
+
+    def test_app_route_returns_selectable_ambiguous_places(self):
+        spec = importlib.util.spec_from_file_location('forecast_route', ROOT / 'routes/forecast.py')
+        route = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(route)
+        host = types.SimpleNamespace(get_system=lambda: types.SimpleNamespace(llm_chat=types.SimpleNamespace(
+            session_manager=types.SimpleNamespace(get_chat_settings=lambda: {}))))
+        rows = [dict(name='Springfield', admin1='Illinois', latitude=39.8, longitude=-89.6),
+                dict(name='Springfield', admin1='Massachusetts', latitude=42.1, longitude=-72.5)]
+        with patch.dict('sys.modules', {'core.api_fastapi':host}), patch.object(route.importlib, 'import_module', return_value=w), patch.object(w, '_json', return_value={'results':rows}):
+            result, status = route.handle_forecast(body={'location':'Springfield'}, settings={})
+        self.assertEqual(status, 409)
+        self.assertEqual(len(result['choices']), 2)
+        self.assertEqual(result['choices'][0]['latitude'], 39.8)
+
 
 if __name__ == '__main__':
     unittest.main()

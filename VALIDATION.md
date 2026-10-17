@@ -1,5 +1,7 @@
 # Weather V1 validation — October 17, 2026
 
+The sections below record the original 0.1.0 validation. For the 0.2.0 visual dashboard preview, see [dashboard validation](validation/dashboard-preview.md): 24 unit tests, four HTTP safeguard checks, and browser interaction checks.
+
 ## Result
 
 20 offline unit tests passed. A disposable checkout of `ddxfish/sapphire` dev at `70b975bc42675dce51d1563b8b66097307b5d142` loaded and executed the plugin successfully through its actual `PluginLoader`, `FunctionManager`, and `core.net` implementations. No changes were made to existing Sapphire, DES, AXIS, or TRI checkouts or environments.

@@ -1,0 +1,18 @@
+[
+  {
+    "check": "private refusal",
+    "status": 403
+  },
+  {
+    "check": "unverifiable privacy refusal",
+    "status": 503
+  },
+  {
+    "check": "CSRF refusal",
+    "status": 403
+  },
+  {
+    "check": "unauthenticated refusal",
+    "status": 401
+  }
+]

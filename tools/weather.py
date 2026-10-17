@@ -46,6 +46,13 @@ class WeatherError(Exception):
     pass
 
 
+class AmbiguousLocation(WeatherError):
+    def __init__(self, places):
+        self.choices = [dict(label=label, latitude=la, longitude=lo) for (la, lo), label in places.items()]
+        options = '\n'.join(f'- {label}: latitude {la}, longitude {lo}' for (la, lo), label in places.items())
+        super().__init__('Several places match. Ask the user to choose, then call with that pair of coordinates:\n' + options)
+
+
 def _number(value, name, low, high, integer=False):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise WeatherError(f'{name} must be a number from {low} to {high}.')
@@ -155,8 +162,7 @@ def _place(arguments, settings, timeout, ttl):
             raise WeatherError('Place search returned an unnamed location.')
         places[(la, lo)] = label
     if len(places) != 1:
-        options = '\n'.join(f'- {label}: latitude {la}, longitude {lo}' for (la, lo), label in places.items())
-        raise WeatherError('Several places match. Ask the user to choose, then call with that pair of coordinates:\n' + options)
+        raise AmbiguousLocation(places)
     (la, lo), label = next(iter(places.items()))
     return la, lo, label
 
@@ -248,39 +254,59 @@ def execute(function_name, arguments, config, plugin_settings=None):
     if function_name != 'weather_get':
         return 'Unknown weather function.', False
     try:
-        if _private():
-            return 'Weather uses an external API and is unavailable in private chats.', False
-        if not isinstance(arguments, dict):
-            raise WeatherError('Weather arguments must be an object.')
-        allowed = {'location', 'latitude', 'longitude', 'country_code', 'units', 'days'}
-        if arguments.keys() - allowed:
-            raise WeatherError('Unsupported weather argument.')
-        settings = dict(DEFAULTS)
-        if plugin_settings is not None:
-            if not isinstance(plugin_settings, dict):
-                raise WeatherError('Weather settings must be an object.')
-            settings.update(plugin_settings)
-        units = arguments.get('units', settings['units'])
-        if units not in ('metric', 'imperial'):
-            raise WeatherError('Units must be metric or imperial.')
-        days = _number(arguments.get('days', settings['forecast_days']), 'Forecast days', 1, 7, True)
-        timeout = _number(settings['timeout_seconds'], 'Timeout', 2, 20)
-        ttl = _number(settings['cache_minutes'], 'Cache minutes', 1, 60) * 60
-        la, lo, label = _place(arguments, settings, timeout, ttl)
-        params = dict(latitude=la, longitude=lo, timezone='auto', forecast_days=days,
-                      current='temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation',
-                      daily='weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
-                      temperature_unit='fahrenheit' if units == 'imperial' else 'celsius',
-                      wind_speed_unit='mph' if units == 'imperial' else 'kmh',
-                      precipitation_unit='inch' if units == 'imperial' else 'mm')
-        # Validate before caching: malformed responses must not poison the cache.
-        def fetch():
-            data = _json(FORECAST_URL, params, timeout)
-            _render(data, label, units, days, '', False)
-            return data
-        data, stamp, cached = _cached(('weather', la, lo, units, days), ttl, fetch)
-        return _render(data, label, units, days, stamp, cached), True
+        return get_weather(arguments, plugin_settings)['text'], True
     except WeatherError as exc:
         return str(exc), False
     except Exception:
         return 'Weather could not run. Check the Sapphire host and Weather settings.', False
+
+
+def get_weather(arguments, plugin_settings=None):
+    """One validated, privacy-gated data path for chat and the visual app."""
+    if _private():
+        raise WeatherError('Weather uses an external API and is unavailable in private chats.')
+    if not isinstance(arguments, dict):
+        raise WeatherError('Weather arguments must be an object.')
+    allowed = {'location', 'latitude', 'longitude', 'country_code', 'units', 'days'}
+    if arguments.keys() - allowed:
+        raise WeatherError('Unsupported weather argument.')
+    settings = dict(DEFAULTS)
+    if plugin_settings is not None:
+        if not isinstance(plugin_settings, dict):
+            raise WeatherError('Weather settings must be an object.')
+        settings.update(plugin_settings)
+    units = arguments.get('units', settings['units'])
+    if units not in ('metric', 'imperial'):
+        raise WeatherError('Units must be metric or imperial.')
+    days = _number(arguments.get('days', settings['forecast_days']), 'Forecast days', 1, 7, True)
+    timeout = _number(settings['timeout_seconds'], 'Timeout', 2, 20)
+    ttl = _number(settings['cache_minutes'], 'Cache minutes', 1, 60) * 60
+    la, lo, label = _place(arguments, settings, timeout, ttl)
+    params = dict(latitude=la, longitude=lo, timezone='auto', forecast_days=days,
+                  current='temperature_2m,apparent_temperature,weather_code,wind_speed_10m,precipitation',
+                  daily='weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+                  temperature_unit='fahrenheit' if units == 'imperial' else 'celsius',
+                  wind_speed_unit='mph' if units == 'imperial' else 'kmh',
+                  precipitation_unit='inch' if units == 'imperial' else 'mm')
+    def fetch():
+        data = _json(FORECAST_URL, params, timeout)
+        _render(data, label, units, days, '', False)
+        return data
+    data, stamp, cached = _cached(('weather', la, lo, units, days), ttl, fetch)
+    text = _render(data, label, units, days, stamp, cached)
+    current, daily = data['current'], data['daily']
+    return {
+        'text': text, 'location': label, 'latitude': la, 'longitude': lo,
+        'timezone': data['timezone'], 'units': units, 'fetched_at': stamp, 'cached': cached,
+        'current': {
+            'time': current['time'], 'temperature': current.get('temperature_2m'),
+            'feels_like': current.get('apparent_temperature'), 'wind': current.get('wind_speed_10m'),
+            'precipitation': current.get('precipitation'), 'code': current.get('weather_code'),
+            'condition': _condition(current.get('weather_code'))
+        },
+        'forecast': [dict(date=date, high=daily['temperature_2m_max'][i],
+                          low=daily['temperature_2m_min'][i], code=daily['weather_code'][i],
+                          condition=_condition(daily['weather_code'][i]),
+                          precipitation_probability=daily['precipitation_probability_max'][i])
+                     for i, date in enumerate(daily['time'])]
+    }
