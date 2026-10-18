@@ -1,3 +1,7 @@
+## Voice and vault follow-up
+
+Real encrypted-chat lock/unlock tests and a local-model speech round trip passed. See [voice and vault validation](validation/voice-vault-validation.md) for results, the observed city-recognition limitation, and remaining physical-audio/live-LLM boundaries. The historical limits below describe earlier test stages.
+
 ## Latest dashboard review
 
 Version 0.2.1: 30 Python tests, 4 JavaScript tests and 8 actual-host integration assertions passed. See [review follow-up](validation/review-followup.md) for evidence and limits. Earlier results below describe earlier validation stages.
