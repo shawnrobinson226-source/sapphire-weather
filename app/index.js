@@ -1,5 +1,6 @@
 // Native Sapphire app. The data path is shared with the conversational tool.
 import pluginsAPI from '/static/shared/plugins-api.js';
+import {dayLabel,ageLabel,isStale,fetchedLabel} from './weather-format.js';
 
 const PATH = '/plugin-web/sapphire-weather/app/';
 const icons = {
@@ -32,9 +33,6 @@ function temperature(value, from, to) {
   if (value == null) return null;
   return from === to ? value : to === 'imperial' ? value * 9 / 5 + 32 : (value - 32) * 5 / 9;
 }
-function weekday(date, index) {
-  return index === 0 ? 'Today' : new Date(date + 'T12:00:00Z').toLocaleDateString(undefined, {weekday:'short', timeZone:'UTC'});
-}
 function shortDate(date) {
   return new Date(date + 'T12:00:00Z').toLocaleDateString(undefined, {month:'short', day:'numeric', timeZone:'UTC'});
 }
@@ -44,25 +42,45 @@ export function render(container) {
   container.appendChild(link);
   const root = document.createElement('section'); root.className = 'sw-app'; root.setAttribute('aria-label','Weather dashboard');
   container.appendChild(root);
-  let weather = null, viewUnits = 'imperial', horizon = 7, selected = 0, active = true, requestId = 0, controller, choices = [];
+  let weather = null, viewUnits = 'metric', horizon = 3, selected = 0, active = true, requestId = 0, controller, choices = [], cacheMinutes=10, interacted=false, contextToken, contextError;
+  const contextPromise=fetch('/api/plugin/sapphire-weather/context').then(async response=>{
+    const data=await response.json().catch(()=>({error:'Could not verify the current chat. Reload Weather.'}));
+    if(!response.ok||!data.context)throw new Error(data.error||'Reload Weather from a public chat.');
+    contextToken=data.context;
+  }).catch(error=>{contextError=error;});
   root.innerHTML = `
   <header class="sw-top"><div class="sw-brand"><div class="sw-brandmark">${icon('sun')}</div><div><div class="sw-eyebrow">Sapphire</div><div class="sw-brandname">Weather, at a glance.</div></div></div>
-    <div class="sw-actions"><div class="sw-units" role="group" aria-label="Temperature units"><button type="button" data-unit="imperial" aria-pressed="true">°F</button><button type="button" data-unit="metric" aria-pressed="false">°C</button></div><button class="sw-quiet" data-action="preferences" aria-expanded="false" aria-label="Preferences">${icon('settings')}<span class="sw-pref-label">Preferences</span></button></div></header>
+    <div class="sw-actions"><div class="sw-units" role="group" aria-label="Temperature units"><button type="button" data-unit="imperial" aria-pressed="false">°F</button><button type="button" data-unit="metric" aria-pressed="true">°C</button></div><button class="sw-quiet" data-action="preferences" aria-expanded="false" aria-label="Preferences">${icon('settings')}<span class="sw-pref-label">Preferences</span></button></div></header>
   <form class="sw-locationbar"><label class="sw-search">${icon('search')}<span class="sw-sr">City and region</span><input name="location" autocomplete="off" maxlength="160" placeholder="City, state or country" aria-label="City and region" required></label><button class="sw-primary" type="submit">Find weather</button></form>
   <div class="sw-status" role="status" aria-live="polite">Choose a city to see its forecast.</div>
   <div class="sw-choices sw-hidden" role="group" aria-label="Matching places"></div>
   <section class="sw-preferences sw-hidden" aria-label="Weather preferences"><h2>Make this your forecast</h2><p>Remember the city in the search box, your temperature unit, and the number of forecast days. Connection and cache settings stay in Sapphire’s plugin settings.</p><button class="sw-quiet" data-action="save">${icon('save')}Save current view</button><span class="sw-saving" role="status"></span></section>
   <div class="sw-empty"><div class="sw-empty-scene">${scene(2)}</div><h2>Your day, at a glance.</h2><p>One clear forecast. A little less scrolling.<br>Search for a city to get started.</p></div>
   <div class="sw-content sw-hidden"><div class="sw-stage"><article class="sw-hero"><div class="sw-place">${icon('pin')}<span>Local outlook</span></div><h1 class="sw-city"></h1><p class="sw-region"></p><div class="sw-temperature-row"><div class="sw-temperature"></div><div class="sw-scene"></div></div><p class="sw-condition"></p><p class="sw-highlow"></p><div class="sw-hero-bottom"><span class="sw-modeltime"></span><button class="sw-now" data-action="refresh">${icon('refresh')}Check weather</button></div></article><div class="sw-details"></div></div>
-  <div class="sw-section-head"><h2>Your next few days</h2><label class="sw-sliderbox"><span class="sw-daycount">7 days</span><span class="sw-sr">Forecast days</span><input type="range" min="1" max="7" value="7" aria-label="Forecast days"></label></div>
+  <div class="sw-section-head"><h2>Your next few days</h2><label class="sw-sliderbox"><span class="sw-daycount">3 days</span><span class="sw-sr">Forecast days</span><input type="range" min="1" max="7" value="3" aria-label="Forecast days" aria-valuetext="3 forecast days"></label></div>
   <div class="sw-days" role="group" aria-label="Choose a forecast day"></div><div class="sw-selected" aria-live="polite"></div></div>
   <footer class="sw-footer"><details><summary>About this forecast</summary><p>Current conditions are modelled weather. Day cards show daily high / low temperatures and precipitation probability. This app respects the active chat’s privacy setting. Free provider access is for noncommercial use.</p><p>Data: <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open-Meteo</a> · <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a> · <a href="https://www.geonames.org/" target="_blank" rel="noopener noreferrer">GeoNames</a></p></details><span class="sw-updated">No forecast loaded</span></footer>`;
   const q = selector => root.querySelector(selector);
   const input = q('input[name=location]');
+  input.addEventListener('input',()=>{interacted=true;});
   const status = (message, error=false) => {q('.sw-status').textContent=message;q('.sw-status').dataset.error=String(error);};
   const formatted = value => value == null ? '—' : Math.round(value);
   const temp = value => formatted(temperature(value, weather.units, viewUnits));
   const updateUnits = () => root.querySelectorAll('[data-unit]').forEach(b => b.setAttribute('aria-pressed',String(b.dataset.unit === viewUnits)));
+  const weekday = date => dayLabel(date,weather.timezone);
+  function freshness() {
+    if(!active||!weather)return;
+    const first=weather.forecast[0];
+    const label=weekday(first.date);
+    q('.sw-highlow').textContent=`${label==='Today'?'Today’s':shortDate(first.date)} high ${temp(first.high)}°  ·  Low ${temp(first.low)}°`;
+    q('.sw-modeltime').textContent=`Conditions · ${shortDate(weather.current.time.slice(0,10))}, ${weather.current.time.slice(11,16)} in ${weather.location.split(',')[0]}`;
+    q('.sw-updated').textContent=`${weather.cached?'Cached · ':''}Fetched ${fetchedLabel(weather.fetched_at,weather.timezone)} · ${ageLabel(weather.fetched_at)}`;
+    root.querySelectorAll('.sw-day').forEach((button,i)=>{const d=weather.forecast[i];button.querySelector('.sw-day-name').textContent=weekday(d.date);button.setAttribute('aria-label',`${weekday(d.date)}, ${d.condition}, high ${temp(d.high)} degrees, low ${temp(d.low)} degrees`);});
+    const day=weather.forecast[selected];q('.sw-selected-title').textContent=`${weekday(day.date)} · ${day.condition}`;
+    root.querySelectorAll('.sw-metric-note')[2].textContent=label==='Today'?'Today’s maximum chance':`${shortDate(first.date)} maximum chance`;
+    if(isStale(weather,cacheMinutes)&&root.getAttribute('aria-busy')!=='true')status('This forecast is older. Check weather again after the cache expires.');
+  }
+  const freshnessTimer=setInterval(freshness,60000);
 
   function paint() {
     if (!active || !weather) return;
@@ -75,19 +93,19 @@ export function render(container) {
     q('.sw-highlow').textContent=`Today’s high ${temp(today.high)}°  ·  Low ${temp(today.low)}°`;
     q('.sw-modeltime').textContent='Current conditions · '+c.time.slice(11,16)+' local';
     const wind=c.wind==null?null:(weather.units===viewUnits?c.wind:viewUnits==='imperial'?c.wind/1.609344:c.wind*1.609344);
+    const precip=c.precipitation==null?null:(weather.units===viewUnits?c.precipitation:viewUnits==='imperial'?c.precipitation/25.4:c.precipitation*25.4);
     const metrics=[
       ['thermometer','Feels like',temp(c.feels_like),'°'+(viewUnits==='imperial'?'F':'C'),'Current conditions'],
       ['wind','Wind',wind==null?'—':Math.round(wind),viewUnits==='imperial'?'mph':'km/h','Current wind speed'],
       ['drop','Rain / snow chance',formatted(today.precipitation_probability),'%','Today’s maximum chance'],
-      ['sun','Today’s low',temp(today.low),'°'+(viewUnits==='imperial'?'F':'C'),'Daily forecast']
+      ['drop','Precipitation',precip==null?'—':Number(precip.toFixed(viewUnits==='imperial'?2:1)),viewUnits==='imperial'?'in':'mm','Provider reporting interval']
     ];
     q('.sw-details').innerHTML=metrics.map(([i,label,value,unit,note])=>`<article class="sw-metric"><div class="sw-metric-head"><span>${label}</span>${icon(i)}</div><div class="sw-metric-value">${value}<small>${unit}</small></div><p class="sw-metric-note">${note}</p></article>`).join('');
     q('.sw-daycount').textContent=`${horizon} ${horizon===1?'day':'days'}`;
     const days=q('.sw-days');days.style.setProperty('--sw-count',horizon);
     days.innerHTML=weather.forecast.slice(0,horizon).map((d,i)=>`<button class="sw-day" data-day="${i}" type="button" aria-pressed="${i===selected}" aria-label="${escape(weekday(d.date,i))}, ${escape(d.condition)}, high ${temp(d.high)} degrees, low ${temp(d.low)} degrees"><span class="sw-day-name">${escape(weekday(d.date,i))}</span><span class="sw-day-date">${escape(shortDate(d.date))}</span><span class="sw-day-icon">${scene(d.code)}</span><span class="sw-day-temps"><span>${temp(d.high)}°</span><span>${temp(d.low)}°</span></span><span class="sw-day-rain">${icon('drop')}${formatted(d.precipitation_probability)}%</span></button>`).join('');
     q('.sw-selected').innerHTML=`<div><div class="sw-selected-title">${escape(weekday(day.date,selected))} · ${escape(day.condition)}</div><p class="sw-selected-copy">${formatted(day.precipitation_probability)}% chance of rain or snow. Select another day to explore.</p></div><div class="sw-range-legend"><span>High <strong>${temp(day.high)}°</strong></span><span>Low <strong>${temp(day.low)}°</strong></span></div>`;
-    let updated='';try{updated=new Date(weather.fetched_at).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit',timeZone:weather.timezone});}catch{updated=weather.fetched_at;}
-    q('.sw-updated').textContent=`${weather.cached?'Cached forecast':'Fetched'} · ${updated} local`;
+    freshness();
     updateUnits();
   }
 
@@ -96,9 +114,11 @@ export function render(container) {
     const id=++requestId;controller?.abort();controller=new AbortController();choices=[];
     root.setAttribute('aria-busy','true');q('button[type=submit]').disabled=true;status('Checking the forecast…');q('.sw-choices').classList.add('sw-hidden');
     try {
+      await contextPromise;if(!active||id!==requestId)return;if(contextError||!contextToken)throw contextError||new Error('Reload Weather from a public chat.');
       const args=place?{latitude:place.latitude,longitude:place.longitude,units:viewUnits,days:7}:{location,units:viewUnits,days:7};
+      args._context=contextToken;
       const response=await fetch('/api/plugin/sapphire-weather/forecast',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':document.querySelector('meta[name="csrf-token"]')?.content||''},body:JSON.stringify(args),signal:controller.signal});
-      const data=await response.json();
+      const data=await response.json().catch(()=>({error:response.status===401?'Sign in again, then reload Weather.':`Weather request failed (HTTP ${response.status}). Please try again.`}));
       if(!active||id!==requestId)return;
       choices=Array.isArray(data.choices)?data.choices:[];
       if(!response.ok||!data.success)throw new Error(data.error||'Weather is unavailable. Please try again.');
@@ -112,14 +132,14 @@ export function render(container) {
       weather=null;q('.sw-content').classList.add('sw-hidden');q('.sw-empty').classList.remove('sw-hidden');
       q('.sw-updated').textContent='No current forecast';
     } finally {
-      if(active&&id===requestId){root.setAttribute('aria-busy','false');q('button[type=submit]').disabled=false;}
+      if(active&&id===requestId){root.setAttribute('aria-busy','false');q('button[type=submit]').disabled=false;freshness();}
     }
   }
-  q('form').addEventListener('submit',event=>{event.preventDefault();load();});
-  q('input[type=range]').addEventListener('input',event=>{horizon=Number(event.target.value);paint();});
+  q('form').addEventListener('submit',event=>{event.preventDefault();interacted=true;load();});
+  q('input[type=range]').addEventListener('input',event=>{interacted=true;horizon=Number(event.target.value);event.target.setAttribute('aria-valuetext',`${horizon} forecast days`);paint();});
   root.addEventListener('click',async event=>{
     const button=event.target.closest('button');if(!button||!root.contains(button))return;
-    if(button.dataset.unit){viewUnits=button.dataset.unit;updateUnits();paint();}
+    if(button.dataset.unit){interacted=true;viewUnits=button.dataset.unit;updateUnits();paint();}
     if(button.dataset.day!=null){selected=Number(button.dataset.day);paint();q(`[data-day="${selected}"]`)?.focus({preventScroll:true});}
     if(button.dataset.choice!=null){const choice=choices[Number(button.dataset.choice)];if(choice)load(choice);}
     if(button.dataset.action==='refresh')load();
@@ -135,11 +155,13 @@ export function render(container) {
   });
   pluginsAPI.getSettings('sapphire-weather').then(saved=>{
     if(!active)return;
-    viewUnits=saved.units==='metric'?'metric':'imperial';
-    horizon=Number.isInteger(saved.forecast_days)&&saved.forecast_days>=1&&saved.forecast_days<=7?saved.forecast_days:7;
-    q('input[type=range]').value=horizon;updateUnits();
+    cacheMinutes=typeof saved.cache_minutes==='number'&&saved.cache_minutes>=1&&saved.cache_minutes<=60?saved.cache_minutes:10;
+    if(interacted)return;
+    viewUnits=saved.units==='imperial'?'imperial':'metric';
+    horizon=Number.isInteger(saved.forecast_days)&&saved.forecast_days>=1&&saved.forecast_days<=7?saved.forecast_days:3;
+    q('input[type=range]').value=horizon;q('input[type=range]').setAttribute('aria-valuetext',`${horizon} forecast days`);updateUnits();
     input.value=typeof saved.default_location==='string'?saved.default_location:'';
     if(input.value)load();
   }).catch(()=>{if(active)status('Saved preferences could not load. You can still search for a city.',true);});
-  return ()=>{active=false;requestId++;controller?.abort();root.remove();link.remove();};
+  return ()=>{active=false;requestId++;controller?.abort();clearInterval(freshnessTimer);root.remove();link.remove();};
 }

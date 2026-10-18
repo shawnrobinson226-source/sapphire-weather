@@ -1,7 +1,7 @@
 {
   "name": "sapphire-weather",
   "short_display_name": "Weather",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Current weather and up to seven forecast days using Open-Meteo.",
   "author": "shawnrobinson226-source",
   "icon": "🌤️",
@@ -9,7 +9,10 @@
   "capabilities": {
     "tools": ["tools/weather.py"],
     "app": {"label": "Weather", "icon": "🌤️", "description": "Your forecast, at a glance."},
-    "routes": [{"method": "POST", "path": "forecast", "handler": "routes/forecast.py:handle_forecast"}],
+    "routes": [
+      {"method": "GET", "path": "context", "handler": "routes/forecast.py:handle_context"},
+      {"method": "POST", "path": "forecast", "handler": "routes/forecast.py:handle_forecast"}
+    ],
     "settings": [
       {"key": "default_location", "type": "string", "label": "Default location", "default": "", "help": "City with region/country. Leave empty to ask each time. Ambiguous names require coordinates."},
       {"key": "units", "type": "string", "label": "Units", "default": "metric", "options": [{"label": "Metric", "value": "metric"}, {"label": "Imperial", "value": "imperial"}]},

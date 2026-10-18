@@ -1,6 +1,6 @@
 # Sapphire Weather
 
-Independent Sapphire plugin for current modelled conditions and one to seven forecast days, including today. No key or additional Python packages are required beyond Sapphire's existing runtime. Version 0.2.0 adds a native visual Weather app alongside the conversational tool. No background tasks, device geolocation, or DES/AXIS/TRI connections.
+Independent Sapphire plugin for current modelled conditions and one to seven forecast days, including today. No key or additional Python packages are required beyond Sapphire's existing runtime. Version 0.2.1 adds a native visual Weather app alongside the conversational tool. No background tasks, device geolocation, or DES/AXIS/TRI connections.
 
 ## Visual dashboard
 
@@ -8,7 +8,7 @@ Open **Apps > Weather** after enabling the plugin. The dashboard presents one pr
 
 The app requests a seven-day snapshot, then filters locally; the conversational tool continues to request the chosen number of days. SVG weather illustrations represent provider condition codes. The dashboard adapts to narrow screens, supports keyboard focus, and honours reduced-motion preferences. It does not invent hourly data or comfort scores.
 
-The app's authenticated POST route checks the active chat's privacy setting server-side, separately from the tool manager's gate. Private or unverifiable chat state refuses before reading forecast caches or making provider calls. The app clears its displayed forecast after a failed request rather than presenting it as current.
+The app obtains a public-chat context token on entry. Its authenticated POST route verifies that context and the current chat state server-side, separately from the tool manager's gate. Switching chats requires reloading Weather. Every public chat requires authoritative public, non-vaulted active-chat metadata, including settings with an explicit false privacy flag; empty or malformed state is refused. Limbo is refused. Requests recheck state before cache/provider work, while streaming (host checks throttled to 250 ms), and before returning results. Private or unverifiable chat state refuses before reading forecast caches or making provider calls. The app clears its displayed forecast after a failed request rather than presenting it as current.
 
 ## Install
 
@@ -22,7 +22,7 @@ The app's authenticated POST route checks the active chat's privacy setting serv
 
 ## Privacy, networking, and provider limits
 
-Weather is an external API tool (`is_local: "endpoint"`, `network: true`) and refuses private chats before accessing either the network or cache. All HTTP calls use Sapphire's `core.net`; no direct-network fallback or proxy-setting changes are made. Only fixed HTTPS geocoding and forecast endpoints are used; redirects are refused. Two requests may be needed for a city query. Connection/read timeouts are 2–20 seconds each, not a total wall-clock deadline.
+Weather is an external API tool (`is_local: "endpoint"`, `network: true`) and refuses private chats before accessing either the network or cache. All HTTP calls use Sapphire's `core.net`; no direct-network fallback or proxy-setting changes are made. Only fixed HTTPS geocoding and forecast endpoints are used; redirects are refused. Two requests may be needed for a city query. Connection/read timeouts are 2–20 seconds each, not a total wall-clock deadline. Streamed responses also have a progress deadline of twice the configured timeout, capped at 30 seconds; this does not bound DNS/connect time or time waiting for the shared cache lock.
 
 Place searches send the entered place name; forecasts send coordinates to Open-Meteo. Its API privacy terms say server logs may contain coordinates and are deleted after 90 days. The plugin writes no files or request logs. A thread-safe in-memory cache holds at most 64 response entries and is not persisted between processes; responses show their UTC fetch time. Expired responses are not served as fresh during outages. Exact city-name matches are preferred over prefix matches for nearby landmarks; multiple exact city matches still require a choice.
 
@@ -30,9 +30,11 @@ Open-Meteo's keyless free API is for **noncommercial** use, with limits below 10
 
 Every successful result includes Open-Meteo / GeoNames attribution. Weather data is provided under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); this does not remove service access restrictions. Results are modelled weather, not verified local station readings. Forecast dates and current timestamps use the provider's location timezone; the provider's ISO timestamps use a fixed UTC offset across the requested range. No hourly DST conversion is attempted. V1 is not an emergency-alert service.
 
+The dashboard updates date and age labels every minute without background provider requests, marks expired or previous-day snapshots stale, and shows fetch date/time in the location timezone.
+
 ## Tests
 
-From this repository root run `python -m unittest discover -s tests -v`. Tests stub only the external transport/privacy boundary, use no network, and create no persistent user state. Do not add `tests/__init__.py` (Sapphire's plugin collection convention).
+From this repository root run `python -m unittest discover -s tests -v`. Also run `node --test tests/test_format.mjs` with a current Node runtime. Tests stub only the external transport/privacy boundary, use no network, and create no persistent user state. Do not add `tests/__init__.py` (Sapphire's plugin collection convention).
 
 Sapphire's root test discovery skips `user/`; run these tests explicitly after installing there. Host integration and bounded live-provider checks are documented in `VALIDATION.md` with their actual results. Passing unit tests alone does not establish a working Sapphire UI installation.
 

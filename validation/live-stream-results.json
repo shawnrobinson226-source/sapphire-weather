@@ -1,0 +1,11 @@
+{
+  "check": "live core.net byte-stream with real session metadata guard",
+  "passed": true,
+  "query": "Springfield, Illinois, United States",
+  "location": "Springfield, Illinois, United States",
+  "guard_calls": 9,
+  "elapsed_seconds": 1.937,
+  "cached": false,
+  "provider_requests": 2,
+  "scope": "qualified city geocoding and one-day forecast; no LLM or vault lifecycle"
+}

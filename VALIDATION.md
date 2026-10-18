@@ -1,3 +1,7 @@
+## Latest dashboard review
+
+Version 0.2.1: 30 Python tests, 4 JavaScript tests and 8 actual-host integration assertions passed. See [review follow-up](validation/review-followup.md) for evidence and limits. Earlier results below describe earlier validation stages.
+
 # Weather V1 validation — October 17, 2026
 
 The sections below record the original 0.1.0 validation. For the 0.2.0 visual dashboard preview, see [dashboard validation](validation/dashboard-preview.md): 24 unit tests, four HTTP safeguard checks, and browser interaction checks.

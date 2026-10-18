@@ -1,0 +1,11 @@
+Please independently review the attached Sapphire Weather build before we finish it. The operator explicitly asked us to bring you in for a thorough overall implementation review, not just aesthetics.
+
+The Markdown packet contains the exact plugin source, all 24 tests, manifest, native dashboard JavaScript/CSS, shared Python weather helper, privacy-gated HTTP route, validation evidence, pinned Sapphire contracts, and explicit limitations. Exact reviewed commit: 61ada6c6b7b0aaeb1843285e1ce8ee511edb8c3e on weather-dashboard. The screenshot is the working live-data preview.
+
+Please read the actual source in the attachment. Prioritize privacy (HTTP route versus tool gate and real chat lifecycle), module identity/cache sharing, networking/proxy behavior, timeouts/concurrency, weather/unit/time correctness, request races/XSS/cleanup, and whether the evidence supports our claims. The preview uses real Sapphire loader/API/session/CSRF/route machinery but a deliberately minimal simulated chat state; full assistant/model/audio startup and real full-chat privacy transitions remain unverified. Do not mistake the partial host for proof of a production installation.
+
+For each finding, rank BLOCKER / IMPORTANT / OPTIONAL, give exact file/function, a concrete triggering scenario, actual consequence, and smallest correction. Label uncertain host assumptions NEEDS VERIFICATION. You may read the public Sapphire source at pinned commit 70b975bc42675dce51d1563b8b66097307b5d142 if helpful, but do not execute, install, edit repositories, request credentials, contact providers, or claim tests you have not run. The private repository need not be accessible because its full relevant source is attached.
+
+Also briefly assess whether the UI now solves the original dense-text complaint: prominent temperature, separate metrics, instant °F/°C, day slider, clickable forecast cards, and selectable city matches. Flag accessibility/usability issues that matter, rather than decorative preferences.
+
+Please return your review directly in this chat. Finish with a release recommendation and one bounded next gate. If there are no genuine blockers, say so; do not manufacture findings. Codex will verify your observations against the source and fix confirmed issues before calling this finished.

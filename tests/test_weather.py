@@ -26,6 +26,13 @@ def forecast(days=3, imperial=False):
     }
 
 
+def session(**kwargs):
+    manager = types.SimpleNamespace(**kwargs)
+    if not hasattr(manager, 'list_chat_files'):
+        manager.list_chat_files = lambda: [dict(name=manager.active_chat_name, private_chat=False, vaulted=False, is_active=True)]
+    return manager
+
+
 class Response:
     def __init__(self, data, status=200, raw=None):
         self.status_code = status
@@ -252,8 +259,8 @@ class WeatherTests(unittest.TestCase):
         spec.loader.exec_module(route)
         def host(settings):
             return types.SimpleNamespace(get_system=lambda: types.SimpleNamespace(llm_chat=types.SimpleNamespace(
-                session_manager=types.SimpleNamespace(get_chat_settings=lambda: settings))))
-        for state, expected in (({'private_chat': True}, 403), (None, 503), ({'private_chat':None}, 503)):
+                session_manager=session(active_chat_name='A',get_chat_settings=lambda: settings))))
+        for state, expected in (({'private_chat': True}, 403), (None, 503), ({},503), ({'private_chat':None}, 503), ({'private_chat':False,'mode':'limbo'},403)):
             with self.subTest(state=state), patch.dict('sys.modules', {'core.api_fastapi': host(state)}), patch.object(route.importlib, 'import_module') as modules:
                 result, status = route.handle_forecast(body={'location': 'Paris'}, settings={})
                 self.assertEqual(status, expected)
@@ -265,9 +272,10 @@ class WeatherTests(unittest.TestCase):
         route = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(route)
         host = types.SimpleNamespace(get_system=lambda: types.SimpleNamespace(llm_chat=types.SimpleNamespace(
-            session_manager=types.SimpleNamespace(get_chat_settings=lambda: {'private_chat':False}))))
+            session_manager=session(active_chat_name='A',get_chat_settings=lambda: {'private_chat':False}))))
         with patch.dict('sys.modules', {'core.api_fastapi':host}), patch.object(route.importlib, 'import_module', return_value=w), patch.object(w, '_json', return_value=forecast()):
-            result = route.handle_forecast(body=dict(latitude=0, longitude=0), settings={})
+            context=route.handle_context()['context']
+            result = route.handle_forecast(body=dict(latitude=0, longitude=0,_context=context), settings={})
         self.assertTrue(result['success'])
         self.assertEqual(result['weather']['current']['condition'], 'Partly cloudy')
 
@@ -276,14 +284,116 @@ class WeatherTests(unittest.TestCase):
         route = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(route)
         host = types.SimpleNamespace(get_system=lambda: types.SimpleNamespace(llm_chat=types.SimpleNamespace(
-            session_manager=types.SimpleNamespace(get_chat_settings=lambda: {}))))
+            session_manager=session(active_chat_name='A',get_chat_settings=lambda: {'private_chat':False}))))
         rows = [dict(name='Springfield', admin1='Illinois', latitude=39.8, longitude=-89.6),
                 dict(name='Springfield', admin1='Massachusetts', latitude=42.1, longitude=-72.5)]
         with patch.dict('sys.modules', {'core.api_fastapi':host}), patch.object(route.importlib, 'import_module', return_value=w), patch.object(w, '_json', return_value={'results':rows}):
-            result, status = route.handle_forecast(body={'location':'Springfield'}, settings={})
+            context=route.handle_context()['context']
+            result, status = route.handle_forecast(body={'location':'Springfield','_context':context}, settings={})
         self.assertEqual(status, 409)
         self.assertEqual(len(result['choices']), 2)
         self.assertEqual(result['choices'][0]['latitude'], 39.8)
+
+    def test_response_progress_deadline_closes_stream(self):
+        response=Response({'ok':True})
+        net=types.SimpleNamespace(get=lambda *a,**k:response)
+        with patch.dict('sys.modules',{'core':types.SimpleNamespace(net=net)}),patch.object(w.time,'monotonic',side_effect=[0,21]):
+            with self.assertRaisesRegex(w.WeatherError,'too long'):
+                w._json(w.FORECAST_URL,{},10)
+        self.assertTrue(response.closed)
+
+    def test_byte_stream_throttles_host_checks_and_detects_slow_drip(self):
+        class ByteResponse(Response):
+            def iter_content(self, size):
+                self.requested_size = size
+                for byte in self.body:
+                    yield bytes([byte])
+        response=ByteResponse({'padding':'x'*100})
+        guard=unittest.mock.Mock(return_value=True)
+        clock=iter(i/100 for i in range(1000))
+        net=types.SimpleNamespace(get=lambda *a,**k:response)
+        with patch.dict('sys.modules',{'core':types.SimpleNamespace(net=net)}),patch.object(w.time,'monotonic',side_effect=lambda:next(clock)),w.guarded_request(guard):
+            self.assertEqual(w._json(w.FORECAST_URL,{},10)['padding'],'x'*100)
+        self.assertEqual(response.requested_size,1)
+        self.assertGreater(guard.call_count,1)
+        self.assertLess(guard.call_count,10)
+        self.assertTrue(response.closed)
+        response=ByteResponse({'padding':'x'*100})
+        clock=iter(i*0.6 for i in range(1000))
+        with patch.dict('sys.modules',{'core':types.SimpleNamespace(net=net)}),patch.object(w.time,'monotonic',side_effect=lambda:next(clock)):
+            with self.assertRaisesRegex(w.WeatherError,'too long'):
+                w._json(w.FORECAST_URL,{},2)
+        self.assertTrue(response.closed)
+
+    def test_request_guard_refuses_warm_cache_and_stream(self):
+        w._cached(('test',),600,lambda:{'ok':True})
+        with w.guarded_request(lambda:False):
+            with self.assertRaises(w.PrivacyChanged):
+                w._cached(('test',),600,lambda:self.fail('must not fetch'))
+        response=Response({'ok':True});check=unittest.mock.Mock(side_effect=[True,False])
+        net=types.SimpleNamespace(get=lambda *a,**k:response)
+        with patch.dict('sys.modules',{'core':types.SimpleNamespace(net=net)}),w.guarded_request(check):
+            with self.assertRaises(w.PrivacyChanged):
+                w._json(w.FORECAST_URL,{},10)
+        self.assertTrue(response.closed)
+
+    def test_app_context_binding_and_midrequest_privacy_change(self):
+        spec=importlib.util.spec_from_file_location('forecast_route',ROOT/'routes/forecast.py')
+        route=importlib.util.module_from_spec(spec);spec.loader.exec_module(route)
+        state={'private_chat':False}
+        manager=session(active_chat_name='A',get_chat_settings=lambda:dict(state))
+        host=types.SimpleNamespace(get_system=lambda:types.SimpleNamespace(llm_chat=types.SimpleNamespace(session_manager=manager)))
+        with patch.dict('sys.modules',{'core.api_fastapi':host}):
+            context=route.handle_context()['context'];manager.active_chat_name='B'
+            with patch.object(route.importlib,'import_module') as modules:
+                _,status=route.handle_forecast(body={'_context':context},settings={})
+                self.assertEqual(status,409);modules.assert_not_called()
+            manager.active_chat_name='A'
+            for invalid in ('é'*64, 'x', None, 123):
+                with patch.object(route.importlib,'import_module') as modules:
+                    _,status=route.handle_forecast(body={'_context':invalid},settings={})
+                    self.assertEqual(status,409);modules.assert_not_called()
+            def provider(*a,**k):
+                state['private_chat']=True
+                return forecast()
+            with patch.object(route.importlib,'import_module',return_value=w),patch.object(w,'_json',side_effect=provider) as fetch:
+                _,status=route.handle_forecast(body={'latitude':0,'longitude':0,'_context':context},settings={})
+                self.assertEqual(status,403);fetch.assert_called_once()
+                self.assertEqual(w._cache,{})
+
+    def test_public_flag_omission_requires_authoritative_metadata(self):
+        spec=importlib.util.spec_from_file_location('forecast_route',ROOT/'routes/forecast.py')
+        route=importlib.util.module_from_spec(spec);spec.loader.exec_module(route)
+        row={'name':'A','private_chat':False,'vaulted':False,'is_active':True}
+        manager=session(active_chat_name='A',get_chat_settings=lambda:{'toolset':'none'},list_chat_files=lambda:[row])
+        host=types.SimpleNamespace(get_system=lambda:types.SimpleNamespace(llm_chat=types.SimpleNamespace(session_manager=manager)))
+        with patch.dict('sys.modules',{'core.api_fastapi':host}):
+            self.assertIn('context',route.handle_context())
+            for field in ('private_chat','vaulted','is_active'):
+                original=row.pop(field)
+                self.assertEqual(route.handle_context()[1],503)
+                row[field]=original
+            row['private_chat']=True
+            self.assertEqual(route.handle_context()[1],503)
+            row['private_chat']=False
+            manager.get_chat_settings=lambda:{'private_chat':False}
+            row['vaulted']=True
+            self.assertEqual(route.handle_context()[1],503)
+            row['vaulted']=False
+            self.assertIn('context',route.handle_context())
+            row['is_active']=False
+            self.assertEqual(route.handle_context()[1],503)
+
+    def test_app_cold_module_is_a_controlled_error(self):
+        spec=importlib.util.spec_from_file_location('forecast_route',ROOT/'routes/forecast.py')
+        route=importlib.util.module_from_spec(spec);spec.loader.exec_module(route)
+        host=types.SimpleNamespace(get_system=lambda:types.SimpleNamespace(llm_chat=types.SimpleNamespace(
+            session_manager=session(active_chat_name='A',get_chat_settings=lambda:{'private_chat':False}))))
+        with patch.dict('sys.modules',{'core.api_fastapi':host}):
+            context=route.handle_context()['context']
+            with patch.object(route.importlib,'import_module',side_effect=ModuleNotFoundError('private-path')):
+                result,status=route.handle_forecast(body={'_context':context},settings={})
+            self.assertEqual(status,503);self.assertNotIn('private-path',str(result))
 
 
 if __name__ == '__main__':

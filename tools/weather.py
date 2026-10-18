@@ -3,6 +3,8 @@ import json
 import math
 import threading
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 
 ENABLED = True
@@ -40,6 +42,7 @@ ATTRIBUTION = ('Weather: Open-Meteo (https://open-meteo.com/), CC BY 4.0 '
 MAX_BYTES = 524288
 _cache = {}
 _lock = threading.RLock()
+_request_guard = ContextVar('weather_request_guard', default=None)
 
 
 class WeatherError(Exception):
@@ -51,6 +54,25 @@ class AmbiguousLocation(WeatherError):
         self.choices = [dict(label=label, latitude=la, longitude=lo) for (la, lo), label in places.items()]
         options = '\n'.join(f'- {label}: latitude {la}, longitude {lo}' for (la, lo), label in places.items())
         super().__init__('Several places match. Ask the user to choose, then call with that pair of coordinates:\n' + options)
+
+
+class PrivacyChanged(WeatherError):
+    pass
+
+
+@contextmanager
+def guarded_request(check):
+    token = _request_guard.set(check)
+    try:
+        yield
+    finally:
+        _request_guard.reset(token)
+
+
+def _check_guard():
+    check = _request_guard.get()
+    if check is not None and not check():
+        raise PrivacyChanged('Chat changed or became private. Reload Weather from a public chat.')
 
 
 def _number(value, name, low, high, integer=False):
@@ -75,6 +97,8 @@ def _private():
 
 def _json(url, params, timeout):
     from core import net
+    _check_guard()
+    deadline = time.monotonic() + min(2 * timeout, 30)
     try:
         response = net.get(url, params=params, timeout=timeout, stream=True, allow_redirects=False)
         try:
@@ -83,7 +107,16 @@ def _json(url, params, timeout):
             if response.status_code != 200:
                 raise WeatherError(f'Weather provider returned HTTP {response.status_code}. Try again later.')
             body = bytearray()
-            for chunk in response.iter_content(65536):
+            # Yield each received byte so a slow drip cannot hide inside a
+            # large buffered chunk indefinitely. Weather JSON is small.
+            next_guard = 0
+            for chunk in response.iter_content(1):
+                now = time.monotonic()
+                if now >= next_guard:
+                    _check_guard()
+                    next_guard = now + 0.25
+                if now >= deadline:
+                    raise WeatherError('Weather response took too long. Please try again.')
                 body.extend(chunk)
                 if len(body) > MAX_BYTES:
                     raise WeatherError('Weather provider response was too large.')
@@ -103,6 +136,7 @@ def _json(url, params, timeout):
 def _cached(key, ttl, fetch):
     # Serialise bounded requests to avoid concurrent duplicate bursts. Memory only.
     with _lock:
+        _check_guard()
         now = time.monotonic()
         for old in list(_cache):
             if now - _cache[old][0] >= ttl:
@@ -110,6 +144,7 @@ def _cached(key, ttl, fetch):
         if key in _cache:
             return _cache[key][1], _cache[key][2], True
         value = fetch()
+        _check_guard()
         stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
         if len(_cache) >= 64:
             del _cache[min(_cache, key=lambda k: _cache[k][0])]
@@ -263,6 +298,7 @@ def execute(function_name, arguments, config, plugin_settings=None):
 
 def get_weather(arguments, plugin_settings=None):
     """One validated, privacy-gated data path for chat and the visual app."""
+    _check_guard()
     if _private():
         raise WeatherError('Weather uses an external API and is unavailable in private chats.')
     if not isinstance(arguments, dict):

@@ -1,0 +1,45 @@
+[
+  {
+    "check": "real shell exposes its session CSRF token",
+    "passed": true
+  },
+  {
+    "check": "public A succeeds; tool and route share canonical module/cache",
+    "passed": true,
+    "provider_calls": 1
+  },
+  {
+    "check": "public A browser context refused while private B active",
+    "passed": true,
+    "status": 403,
+    "provider_calls": 0
+  },
+  {
+    "check": "stale B context refused while public A active",
+    "passed": true,
+    "status": 409,
+    "provider_calls": 0
+  },
+  {
+    "check": "A private toggle updates real getter and refuses old context",
+    "passed": true,
+    "status": 403,
+    "provider_calls": 0
+  },
+  {
+    "check": "in-flight private flip suppresses result and cache insertion",
+    "passed": true,
+    "status": 403,
+    "provider_calls_started_while_public": 1
+  },
+  {
+    "check": "limbo/null-room refused even with private_chat false",
+    "passed": true,
+    "status": 403,
+    "provider_calls": 0
+  },
+  {
+    "check": "temporary real-session HTTP server stopped",
+    "passed": true
+  }
+]
